@@ -71,25 +71,38 @@ def get_pipeline():
 
 import queue
 import numpy as np
+import hashlib
+from pathlib import Path
 
-# Cache for generated audio: key=(text, voice, speed) -> value=audio_array
-audio_cache = {}
-MAX_CACHE_SIZE = 100
+# Cache directory configuration
+CACHE_DIR = Path.home() / ".cache" / "mcp_kokoro"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _get_cache_path(text: str, voice: str, speed: float) -> Path:
+    """Generate a unique file path for the given inputs."""
+    content_id = f"{text}|{voice}|{speed}"
+    file_hash = hashlib.sha256(content_id.encode('utf-8')).hexdigest()
+    return CACHE_DIR / f"{file_hash}.npy"
 
 def _speak_sync(text: str, voice: str, speed: float, pipeline):
-    """Synchronous function to handle audio generation and playback with caching and gapless queuing."""
+    """Synchronous function to handle audio generation and playback with persistent file caching."""
     try:
         # Lazy imports
         import sounddevice as sd
         
-        cache_key = (text, voice, speed)
+        cache_path = _get_cache_path(text, voice, speed)
         
-        # 1. Check Cache
-        if cache_key in audio_cache:
-            print(f"Cache hit for: '{text[:20]}...'", file=sys.stderr)
-            sd.play(audio_cache[cache_key], 24000)
-            sd.wait()
-            return None
+        # 1. Check Disk Cache
+        if cache_path.exists():
+            print(f"Disk cache hit for: '{text[:20]}...'", file=sys.stderr)
+            try:
+                audio = np.load(cache_path)
+                sd.play(audio, 24000)
+                sd.wait()
+                return None
+            except Exception as e:
+                print(f"Failed to load cache file: {e}", file=sys.stderr)
+                # Fallthrough to regeneration if cache load fails
 
         print(f"Generating audio for: '{text[:20]}...'", file=sys.stderr)
         
@@ -147,13 +160,14 @@ def _speak_sync(text: str, voice: str, speed: float, pipeline):
         if playback_error:
             raise playback_error
 
-        # 4. Update Cache (LRU-ish: Clear if full)
-        if len(audio_cache) >= MAX_CACHE_SIZE:
-            audio_cache.clear() # Simple wipe strategy to avoid complex dep
-            print("Cache cleared.", file=sys.stderr)
-        
+        # 4. Save to Disk Cache
         if full_audio_pieces:
-            audio_cache[cache_key] = np.concatenate(full_audio_pieces)
+            try:
+                full_audio = np.concatenate(full_audio_pieces)
+                np.save(cache_path, full_audio)
+                print(f"Saved audio to disk cache: {cache_path}", file=sys.stderr)
+            except Exception as e:
+                print(f"Failed to save to disk cache: {e}", file=sys.stderr)
 
         return None
     except Exception as e:
