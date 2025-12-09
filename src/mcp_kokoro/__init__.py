@@ -29,7 +29,7 @@ def _load_pipeline_background():
         from kokoro import KPipeline
         # Initialize pipeline for US English
         # Redirect stdout to stderr to catch any library prints (like tqdm or warnings)
-        device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+        device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
         print(f"Using device: {device}", file=sys.stderr)
         
         with StdoutRedirector():
@@ -63,7 +63,7 @@ def get_pipeline():
             if pipeline is None:
                 print("Pipeline not ready, initializing synchronously...", file=sys.stderr)
                 from kokoro import KPipeline
-                device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+                device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
                 print(f"Using device: {device}", file=sys.stderr)
                 with StdoutRedirector():
                     pipeline = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
