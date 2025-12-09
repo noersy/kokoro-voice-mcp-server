@@ -180,7 +180,7 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
     if error:
         return f"Error speaking text: {str(error)}"
         
-    return f"Successfully spoke: {text}"
+    return "Speech completed successfully."
 
 
 def main():
