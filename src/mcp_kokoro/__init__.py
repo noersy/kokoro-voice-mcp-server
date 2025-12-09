@@ -22,18 +22,21 @@ class StdoutRedirector:
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout = self._stdout
 
+def _create_pipeline():
+    from kokoro import KPipeline
+    # Initialize pipeline for US English
+    # Redirect stdout to stderr to catch any library prints (like tqdm or warnings)
+    device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+    print(f"Using device: {device}", file=sys.stderr)
+    
+    with StdoutRedirector():
+        return KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
+
 def _load_pipeline_background():
     global pipeline
     print("Starting background initialization of Kokoro pipeline...", file=sys.stderr)
     try:
-        from kokoro import KPipeline
-        # Initialize pipeline for US English
-        # Redirect stdout to stderr to catch any library prints (like tqdm or warnings)
-        device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
-        print(f"Using device: {device}", file=sys.stderr)
-        
-        with StdoutRedirector():
-            p = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
+        p = _create_pipeline()
         
         with pipeline_lock:
             pipeline = p
@@ -62,11 +65,7 @@ def get_pipeline():
         with pipeline_lock:
             if pipeline is None:
                 print("Pipeline not ready, initializing synchronously...", file=sys.stderr)
-                from kokoro import KPipeline
-                device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
-                print(f"Using device: {device}", file=sys.stderr)
-                with StdoutRedirector():
-                    pipeline = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
+                pipeline = _create_pipeline()
             
     return pipeline
 
@@ -170,6 +169,9 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
         voice (str): The voice to use (default: 'af_heart'). Options often include 'af_bella', 'af_sarah', 'am_adam', 'af_heart', etc.
         speed (float): Speaking speed (default: 1.0).
     """
+    if not text or not text.strip():
+        return "Speech completed successfully."
+
     pipe = get_pipeline()
     if not pipe:
         return "Error: Pipeline functionality failed to initialize."
