@@ -13,14 +13,7 @@ pipeline = None
 pipeline_lock = threading.Lock()
 pipeline_loading_thread = None
 
-class StdoutRedirector:
-    def __enter__(self):
-        self._stdout = sys.stdout
-        sys.stdout = sys.stderr
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stdout = self._stdout
+import contextlib
 
 def _create_pipeline():
     from kokoro import KPipeline
@@ -29,7 +22,9 @@ def _create_pipeline():
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}", file=sys.stderr)
     
-    with StdoutRedirector():
+    # Use contextlib to redirect stdout to stderr to capture all output including library prints
+    with contextlib.redirect_stdout(sys.stderr):
+        # We explicitly pass repo_id to suppress the warning "Defaulting repo_id to..."
         return KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
 
 def _load_pipeline_background():
@@ -133,7 +128,7 @@ def _speak_sync(text: str, voice: str, speed: float, pipeline):
         full_audio_pieces = []
         
         # 3. Generate Audio
-        with StdoutRedirector():
+        with contextlib.redirect_stdout(sys.stderr):
             # Generator: Process and yield audio
             # Using a more granular split pattern (split on newlines OR sentence endings)
             # to allow for faster time-to-first-audio on long texts
