@@ -182,28 +182,6 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
         
     return f"Successfully spoke: {text}"
 
-@mcp.tool()
-async def ask_approval(request_text: str) -> str:
-    """
-    Ask for user approval audibly. This is a semantic wrapper around speak.
-    
-    Args:
-        request_text (str): The request to ask approval for.
-    """
-    prompt = f"Attention required. {request_text}. Do you approve?"
-    return await speak(prompt, speed=1.1) 
-
-@mcp.tool()
-async def announce_task(task_name: str, status: str = "completed") -> str:
-    """
-    Announce a task update.
-    
-    Args:
-        task_name (str): The name of the task.
-        status (str): The status (e.g., 'completed', 'failed', 'started').
-    """
-    text = f"Task {task_name} has {status}."
-    return await speak(text)
 
 def main():
     mcp.run()
