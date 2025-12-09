@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 import threading
+import torch
 from mcp.server.fastmcp import FastMCP
 
 # Initialize FastMCP server
@@ -28,8 +29,11 @@ def _load_pipeline_background():
         from kokoro import KPipeline
         # Initialize pipeline for US English
         # Redirect stdout to stderr to catch any library prints (like tqdm or warnings)
+        device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+        print(f"Using device: {device}", file=sys.stderr)
+        
         with StdoutRedirector():
-            p = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M')
+            p = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
         
         with pipeline_lock:
             pipeline = p
@@ -59,33 +63,26 @@ def get_pipeline():
             if pipeline is None:
                 print("Pipeline not ready, initializing synchronously...", file=sys.stderr)
                 from kokoro import KPipeline
+                device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+                print(f"Using device: {device}", file=sys.stderr)
                 with StdoutRedirector():
-                    pipeline = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M')
+                    pipeline = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
             
     return pipeline
 
-@mcp.tool()
-async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
-    """
-    Speak the provided text using Kokoro TTS.
-    
-    Args:
-        text (str): The text to speak.
-        voice (str): The voice to use (default: 'af_heart'). Options often include 'af_bella', 'af_sarah', 'am_adam', 'af_heart', etc.
-        speed (float): Speaking speed (default: 1.0).
-    """
+def _speak_sync(text: str, voice: str, speed: float, pipeline):
+    """Synchronous function to handle audio generation and playback."""
     try:
         # Lazy imports are fast enough if main packages are loaded in background
         import sounddevice as sd
         
-        pipe = get_pipeline()
         print(f"Generating audio for: '{text}'", file=sys.stderr)
         
         # Generator returns (graphemes, phonemes, audio)
         # We only need the audio
         # Redirect stdout during generation too, just in case
         with StdoutRedirector():
-            generator = pipe(
+            generator = pipeline(
                 text, 
                 voice=voice, 
                 speed=speed, 
@@ -97,10 +94,31 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
                     print(f"Playing segment {i+1}...", file=sys.stderr)
                     sd.play(audio, 24000) # Kokoro usually defaults to 24khz
                     sd.wait()
-                
-        return f"Successfully spoke: {text}"
+        return None
     except Exception as e:
-        return f"Error speaking text: {str(e)}"
+        return e
+
+@mcp.tool()
+async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
+    """
+    Speak the provided text using Kokoro TTS.
+    
+    Args:
+        text (str): The text to speak.
+        voice (str): The voice to use (default: 'af_heart'). Options often include 'af_bella', 'af_sarah', 'am_adam', 'af_heart', etc.
+        speed (float): Speaking speed (default: 1.0).
+    """
+    pipe = get_pipeline()
+    if not pipe:
+        return "Error: Pipeline functionality failed to initialize."
+
+    # Run the blocking generation/playback in a separate thread
+    error = await asyncio.to_thread(_speak_sync, text, voice, speed, pipe)
+    
+    if error:
+        return f"Error speaking text: {str(error)}"
+        
+    return f"Successfully spoke: {text}"
 
 @mcp.tool()
 async def ask_approval(request_text: str) -> str:
