@@ -134,11 +134,14 @@ def _speak_sync(text: str, voice: str, speed: float, pipeline):
         
         # 3. Generate Audio
         with StdoutRedirector():
+            # Generator: Process and yield audio
+            # Using a more granular split pattern (split on newlines OR sentence endings)
+            # to allow for faster time-to-first-audio on long texts
             generator = pipeline(
                 text, 
                 voice=voice, 
                 speed=speed, 
-                split_pattern=r'\n+'
+                split_pattern=r'\n+|(?<=[.!?])\s+'
             )
             
             for i, (gs, ps, audio) in enumerate(generator):
