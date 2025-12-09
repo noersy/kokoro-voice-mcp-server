@@ -70,17 +70,57 @@ def get_pipeline():
             
     return pipeline
 
+import queue
+import numpy as np
+
+# Cache for generated audio: key=(text, voice, speed) -> value=audio_array
+audio_cache = {}
+MAX_CACHE_SIZE = 100
+
 def _speak_sync(text: str, voice: str, speed: float, pipeline):
-    """Synchronous function to handle audio generation and playback."""
+    """Synchronous function to handle audio generation and playback with caching and gapless queuing."""
     try:
-        # Lazy imports are fast enough if main packages are loaded in background
+        # Lazy imports
         import sounddevice as sd
         
-        print(f"Generating audio for: '{text}'", file=sys.stderr)
+        cache_key = (text, voice, speed)
         
-        # Generator returns (graphemes, phonemes, audio)
-        # We only need the audio
-        # Redirect stdout during generation too, just in case
+        # 1. Check Cache
+        if cache_key in audio_cache:
+            print(f"Cache hit for: '{text[:20]}...'", file=sys.stderr)
+            sd.play(audio_cache[cache_key], 24000)
+            sd.wait()
+            return None
+
+        print(f"Generating audio for: '{text[:20]}...'", file=sys.stderr)
+        
+        # 2. Setup Queue for Gapless Playback
+        q = queue.Queue()
+        playback_error = None
+        
+        def playback_worker():
+            nonlocal playback_error
+            try:
+                while True:
+                    audio_chunk = q.get()
+                    if audio_chunk is None:
+                        q.task_done()
+                        break
+                    
+                    # Play blockingly in this thread
+                    sd.play(audio_chunk, 24000)
+                    sd.wait()
+                    q.task_done()
+            except Exception as e:
+                playback_error = e
+
+        # Start consumer thread
+        t = threading.Thread(target=playback_worker, daemon=True)
+        t.start()
+
+        full_audio_pieces = []
+        
+        # 3. Generate Audio
         with StdoutRedirector():
             generator = pipeline(
                 text, 
@@ -91,9 +131,31 @@ def _speak_sync(text: str, voice: str, speed: float, pipeline):
             
             for i, (gs, ps, audio) in enumerate(generator):
                 if audio is not None:
-                    print(f"Playing segment {i+1}...", file=sys.stderr)
-                    sd.play(audio, 24000) # Kokoro usually defaults to 24khz
-                    sd.wait()
+                    # Ensure audio is numpy array (MPS/CUDA returns wrappers or tensors)
+                    if isinstance(audio, torch.Tensor):
+                        audio = audio.detach().cpu().numpy()
+                    
+                    # Producer: Push to queue
+                    q.put(audio.copy()) 
+                    full_audio_pieces.append(audio)
+            
+            # Signal end of stream
+            q.put(None)
+        
+        # Wait for playback to finish
+        t.join()
+
+        if playback_error:
+            raise playback_error
+
+        # 4. Update Cache (LRU-ish: Clear if full)
+        if len(audio_cache) >= MAX_CACHE_SIZE:
+            audio_cache.clear() # Simple wipe strategy to avoid complex dep
+            print("Cache cleared.", file=sys.stderr)
+        
+        if full_audio_pieces:
+            audio_cache[cache_key] = np.concatenate(full_audio_pieces)
+
         return None
     except Exception as e:
         return e
