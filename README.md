@@ -17,20 +17,9 @@ Generates audio from text and plays it immediately.
   - `voice` (str, optional): The voice to use (default: `af_heart`).
   - `speed` (float, optional): Speaking speed (default: `1.0`).
 
-### `ask_approval`
+### Caching
 
-A semantic wrapper around `speak` specifically for requesting user confirmation.
-
-- **Arguments**:
-  - `request_text` (str): The action or request requiring approval.
-
-### `announce_task`
-
-A semantic wrapper around `speak` for providing status updates on tasks.
-
-- **Arguments**:
-  - `task_name` (str): Name of the task.
-  - `status` (str, optional): Status of the task (default: `completed`).
+Generated audio is cached in `~/.cache/mcp_kokoro` to speed up repeated requests.
 
 ## Installation
 
