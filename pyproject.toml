@@ -1,0 +1,25 @@
+[project]
+name = "mcp-kokoro"
+version = "0.1.0"
+description = "MCP Server for Kokoro TTS"
+authors = [
+    { name = "Antigravity", email = "antigravity@example.com" }
+]
+dependencies = [
+    "mcp",
+    "kokoro>=0.3.0",
+    "soundfile",
+    "sounddevice",
+    "numpy"
+]
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+mcp-kokoro = "mcp_kokoro:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_kokoro"]
