@@ -65,13 +65,13 @@ def get_pipeline():
     return pipeline
 
 @mcp.tool()
-async def speak(text: str, voice: str = "af_sarah", speed: float = 1.0) -> str:
+async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
     """
     Speak the provided text using Kokoro TTS.
     
     Args:
         text (str): The text to speak.
-        voice (str): The voice to use (default: 'af_sarah'). Options often include 'af_bella', 'af_sarah', 'am_adam', etc.
+        voice (str): The voice to use (default: 'af_heart'). Options often include 'af_bella', 'af_sarah', 'am_adam', 'af_heart', etc.
         speed (float): Speaking speed (default: 1.0).
     """
     try:

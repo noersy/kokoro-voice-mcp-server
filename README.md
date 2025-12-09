@@ -14,7 +14,7 @@ Generates audio from text and plays it immediately.
 
 - **Arguments**:
   - `text` (str): The text to speak.
-  - `voice` (str, optional): The voice to use (default: `af_sarah`).
+  - `voice` (str, optional): The voice to use (default: `af_heart`).
   - `speed` (float, optional): Speaking speed (default: `1.0`).
 
 ### `ask_approval`
