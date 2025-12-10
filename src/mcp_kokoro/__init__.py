@@ -139,11 +139,28 @@ def _speak_sync(text: str, voice: str, speed: float, pipeline):
                 split_pattern=r'\n+|(?<=[.!?])\s+'
             )
             
-            for i, (gs, ps, audio) in enumerate(generator):
+            for i, result in enumerate(generator):
+                # Compatibility layer: Handle both KPipeline.Result objects and legacy tuples
+                audio = None
+                
+                # Check for KPipeline.Result (v0.9.4+)
+                if hasattr(result, 'output') and hasattr(result.output, 'audio'):
+                    audio = result.output.audio
+                
+                # Check for legacy tuple (v0.3.0) -> (graphemes, phonemes, audio)
+                elif isinstance(result, (list, tuple)) and len(result) == 3:
+                    _, _, audio = result
+                
                 if audio is not None:
                     # Ensure audio is numpy array (MPS/CUDA returns wrappers or tensors)
                     if isinstance(audio, torch.Tensor):
                         audio = audio.detach().cpu().numpy()
+                    
+                    # Normalize audio if clipping is detected (prevents "crounch")
+                    if len(audio) > 0:
+                        max_val = np.max(np.abs(audio))
+                        if max_val > 1.0:
+                            audio = audio / max_val * 0.99
                     
                     # Producer: Push to queue
                     q.put(audio.copy()) 
