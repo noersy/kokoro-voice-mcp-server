@@ -206,6 +206,9 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
         return "Error: Pipeline functionality failed to initialize."
 
     # Run the blocking generation/playback in a separate thread
+    # Clean text: replace newlines with spaces to avoid TTS issues
+    text = text.replace('\n', ' ')
+    
     error = await asyncio.to_thread(_speak_sync, text, voice, speed, pipe)
     
     if error:
