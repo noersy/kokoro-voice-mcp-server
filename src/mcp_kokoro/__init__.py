@@ -15,56 +15,29 @@ pipeline_loading_thread = None
 
 import contextlib
 
-def _create_pipeline():
-    # Initialize pipeline for US English
-    # Redirect stdout to stderr to catch any library prints (like tqdm or warnings)
-    device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
-    print(f"Using device: {device}", file=sys.stderr)
-    
-    # Use contextlib to redirect stdout to stderr to capture all output including library prints
-    with contextlib.redirect_stdout(sys.stderr):
-        from kokoro import KPipeline
-        # We explicitly pass repo_id to suppress the warning "Defaulting repo_id to..."
-        return KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
-
-def _load_pipeline_background():
+def initialize_pipeline():
     global pipeline
-    # Redirect ALL stdout to stderr during background initialization to be safe
-    with contextlib.redirect_stdout(sys.stderr):
-        print("Starting background initialization of Kokoro pipeline...", file=sys.stderr)
-        try:
-            p = _create_pipeline()
+    # Initialize pipeline synchronously before server start
+    # This prevents race conditions with stdout redirection and ensures
+    # the server is fully ready (or fails early) before accepting connections.
+    print("Initializing Kokoro pipeline...", file=sys.stderr)
+    try:
+        # Redirect stdout to stderr to capture all output including library prints
+        # This is safe here because the MCP server hasn't started listening/writing yet.
+        with contextlib.redirect_stdout(sys.stderr):
+            from kokoro import KPipeline
             
-            with pipeline_lock:
-                pipeline = p
-            print("Kokoro pipeline initialized successfully in background.", file=sys.stderr)
-        except Exception as e:
-            print(f"Error initializing Kokoro pipeline in background: {e}", file=sys.stderr)
-
-def start_background_loading():
-    global pipeline_loading_thread
-    if pipeline_loading_thread is None:
-        pipeline_loading_thread = threading.Thread(target=_load_pipeline_background, daemon=True)
-        pipeline_loading_thread.start()
-
-# Start loading immediately on import
-start_background_loading()
-
-def get_pipeline():
-    global pipeline
-    # Wait for the background thread to finish if it hasn't already
-    if pipeline is None:
-        if pipeline_loading_thread and pipeline_loading_thread.is_alive():
-            print("Waiting for background initialization to complete...", file=sys.stderr)
-            pipeline_loading_thread.join()
-        
-        # If still None (thread failed or didn't run), try loading synchronously as fallback
-        with pipeline_lock:
-            if pipeline is None:
-                print("Pipeline not ready, initializing synchronously...", file=sys.stderr)
-                pipeline = _create_pipeline()
+            device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+            print(f"Using device: {device}", file=sys.stderr)
             
-    return pipeline
+            # We explicitly pass repo_id to suppress the warning "Defaulting repo_id to..."
+            pipeline = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
+            
+        print("Kokoro pipeline initialized successfully.", file=sys.stderr)
+    except Exception as e:
+        print(f"Error initializing Kokoro pipeline: {e}", file=sys.stderr)
+        # We don't exit here, allowing the server to start, but 'speak' will fail later if pipeline is None
+
 
 import queue
 import numpy as np
@@ -203,15 +176,14 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
     if not text or not text.strip():
         return "Speech completed successfully."
 
-    pipe = get_pipeline()
-    if not pipe:
-        return "Error: Pipeline functionality failed to initialize."
+    if pipeline is None:
+        return "Error: Pipeline failed to initialize during server startup. Check logs for details."
 
     # Run the blocking generation/playback in a separate thread
     # Clean text: replace newlines with spaces to avoid TTS issues
     text = text.replace('\n', ' ')
     
-    error = await asyncio.to_thread(_speak_sync, text, voice, speed, pipe)
+    error = await asyncio.to_thread(_speak_sync, text, voice, speed, pipeline)
     
     if error:
         return f"Error speaking text: {str(error)}"
@@ -220,6 +192,7 @@ async def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
 
 
 def main():
+    initialize_pipeline()
     mcp.run()
 
 if __name__ == "__main__":
