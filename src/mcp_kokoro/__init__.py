@@ -16,7 +16,6 @@ pipeline_loading_thread = None
 import contextlib
 
 def _create_pipeline():
-    from kokoro import KPipeline
     # Initialize pipeline for US English
     # Redirect stdout to stderr to catch any library prints (like tqdm or warnings)
     device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
@@ -24,20 +23,23 @@ def _create_pipeline():
     
     # Use contextlib to redirect stdout to stderr to capture all output including library prints
     with contextlib.redirect_stdout(sys.stderr):
+        from kokoro import KPipeline
         # We explicitly pass repo_id to suppress the warning "Defaulting repo_id to..."
         return KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M', device=device)
 
 def _load_pipeline_background():
     global pipeline
-    print("Starting background initialization of Kokoro pipeline...", file=sys.stderr)
-    try:
-        p = _create_pipeline()
-        
-        with pipeline_lock:
-            pipeline = p
-        print("Kokoro pipeline initialized successfully in background.", file=sys.stderr)
-    except Exception as e:
-        print(f"Error initializing Kokoro pipeline in background: {e}", file=sys.stderr)
+    # Redirect ALL stdout to stderr during background initialization to be safe
+    with contextlib.redirect_stdout(sys.stderr):
+        print("Starting background initialization of Kokoro pipeline...", file=sys.stderr)
+        try:
+            p = _create_pipeline()
+            
+            with pipeline_lock:
+                pipeline = p
+            print("Kokoro pipeline initialized successfully in background.", file=sys.stderr)
+        except Exception as e:
+            print(f"Error initializing Kokoro pipeline in background: {e}", file=sys.stderr)
 
 def start_background_loading():
     global pipeline_loading_thread
